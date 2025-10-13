@@ -1,5 +1,6 @@
 import json, os, datetime
 from typing import Dict, Any, List
+from getpass import getpass
 
 # =========================
 # CAP. 3 — SUBALGORITMOS
@@ -89,14 +90,9 @@ def exportar_relatorio_txt(db: Dict[str, Any], caminho: str = "relatorio.txt") -
     print(f"Relatório exportado em: {os.path.abspath(caminho)}")
 
 # =========================
-# CAP. 6 — ORACLE (AINDA FALTA EDITAR**************************)
+# CAP. 6 — ORACLE 
 # =========================
-# CONFIGURAR antes de usar:
-#   pip install oracledb
-#   Defina variáveis de ambiente:
-#     ORA_DSN="host:1521/servicename"
-#     ORA_USER="usuario"
-#     ORA_PASS="senha"
+
 def oracle_enabled() -> bool:
     return all(k in os.environ for k in ["ORA_DSN", "ORA_USER", "ORA_PASS"])
 
@@ -133,7 +129,6 @@ def oracle_criar_tabelas():
                 try:
                     cur.execute(ddl)
                 except Exception as e:
-                    # ignora se já existem
                     if "ORA-00955" not in str(e):
                         raise
         print("Tabelas conferidas/criadas.")
@@ -202,6 +197,63 @@ def perda_alerta(perda_percent: float) -> str:
     if perda_percent >= 8:
         return "MÉDIA (rever umidade e terreno, checar facas)"
     return "BAIXA (dentro do esperado)"
+
+# =========================
+# ORACLE: LOGIN INTERATIVO
+# =========================
+
+def pedir_credenciais_oracle() -> bool:
+    """
+    Pede ORA_USER / ORA_PASS / ORA_DSN no terminal,
+    testa a conexão e, se OK, guarda em os.environ (apenas nesta execução).
+    """
+    print("\n=== Configuração Oracle ===")
+    print("Informe suas credenciais.")
+
+    user = input_nonempty("Usuário: ")
+    dsn  = input_nonempty("DSN: ")
+    passwd = getpass("Senha: ")
+
+    # coloca nas variáveis de ambiente da sessão atual
+    os.environ["ORA_USER"] = user
+    os.environ["ORA_PASS"] = passwd
+    os.environ["ORA_DSN"]  = dsn
+
+    # testa conexão
+    try:
+        with oracle_conn() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT 'OK' FROM dual")
+                _ = cur.fetchone()
+        print("✅ Conexão Oracle validada com sucesso.")
+        return True
+    except Exception as e:
+        print(f"❌ Não foi possível conectar no Oracle: {e}")
+        # limpa se falhou
+        for k in ("ORA_USER", "ORA_PASS", "ORA_DSN"):
+            if k in os.environ:
+                del os.environ[k]
+        return False
+
+
+def oracle_config_ok() -> bool:
+    """
+    Garante que credenciais existam e funcionem.
+    Se não existirem, chama o assistente acima.
+    """
+    if oracle_enabled():
+        try:
+            with oracle_conn() as con:
+                with con.cursor() as cur:
+                    cur.execute("SELECT 1 FROM dual")
+                    _ = cur.fetchone()
+            return True
+        except Exception as e:
+            print(f"⚠️ Variáveis ORA_* existem, mas a conexão falhou: {e}")
+            print("Vamos tentar configurar novamente…")
+            return pedir_credenciais_oracle()
+    else:
+        return pedir_credenciais_oracle()
 
 # =========================
 # MENU/CRUD em memória
@@ -317,12 +369,13 @@ def main():
             else:
                 print("JSON inválido.")
         elif op == "8":
-            if oracle_enabled():
+            print("\n Verificando...")
+            if oracle_config_ok():
                 oracle_criar_tabelas()
-            else:
-                print("Configure ORA_* para usar Oracle.")
         elif op == "9":
-            sincronizar_mem_para_oracle()
+            print("\n=== Sincronizar MEM -> Oracle ===")
+            if oracle_config_ok():
+                sincronizar_mem_para_oracle()
         elif op == "0":
             print("Até mais!")
             break
