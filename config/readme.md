@@ -1,20 +1,27 @@
 # Configurações do Projeto
 
-Nesta pasta ficam os **parâmetros e arquivos de configuração** usados pelo sistema.  
-Inclui definições de variáveis de ambiente, conexões de banco de dados e ajustes de comportamento do projeto.
+Nesta pasta ficam os **arquivos e parâmetros de configuração** usados pelo sistema.  
+Eles definem variáveis de ambiente, conexões com o banco de dados Oracle e ajustes necessários para execução do projeto.
 
 ---
 
 ##  Arquivos
 
-### `oracle.env.example` *(⚠️ será atualizado após a configuração do Oracle)*
+### `oracle.env.exemplo`
+Modelo de arquivo de variáveis de ambiente para configuração do Oracle.  
+Serve como **exemplo de estrutura** — não contém credenciais reais.
 
-Este arquivo serve como **modelo de variáveis de ambiente** para integração com o banco Oracle.
-
-Ex.
-
+Exemplo de conteúdo:
 ```env
-# Exemplo de configuração do Oracle
-ORA_DSN=localhost
-ORA_USER=
-ORA_PASS=
+# ==============================
+# Exemplo de configuração Oracle
+# ==============================
+
+# Endereço do banco Oracle (FIAP ou local)
+ORA_DSN=oracle.fiap.com.br:1521/ORCL
+
+# Usuário do banco Oracle (exemplo)
+ORA_USER=seu_usuario
+
+# Senha do banco Oracle (exemplo)
+ORA_PASS=sua_senha
