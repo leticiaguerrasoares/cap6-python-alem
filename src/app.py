@@ -137,11 +137,15 @@ def oracle_criar_tabelas():
 
 def oracle_inserir_talhao(nome: str, area_ha: float) -> int:
     try:
+        import oracledb  
         with oracle_conn() as con, con.cursor() as cur:
-            cur.execute("INSERT INTO talhoes(nome, area_ha) VALUES (:1, :2) RETURNING id_talhao INTO :id",
-                        [nome, area_ha, cur.var(int)])
-            new_id = cur.getimplicitresults()[0][0] if cur.getimplicitresults() else None
+            out_id = cur.var(oracledb.NUMBER)  # variável de saída
+            cur.execute(
+                "INSERT INTO talhoes (nome, area_ha) VALUES (:1, :2) RETURNING id_talhao INTO :3",
+                [nome, area_ha, out_id]
+            )
             con.commit()
+            new_id = out_id.getvalue()
             return int(new_id) if new_id is not None else -1
     except Exception as e:
         print(f"[Oracle] Erro inserindo talhão: {e}")
@@ -324,22 +328,63 @@ def sincronizar_mem_para_oracle():
     if not oracle_enabled():
         print("Defina ORA_DSN / ORA_USER / ORA_PASS nas variáveis de ambiente.")
         return
+
     oracle_criar_tabelas()
-    # Insere talhões que não existem (lógica simples; em produção, faria upsert)
-    existentes = {t["id_talhao"] for t in oracle_listar_talhoes()}
-    for tid, t in db_mem["talhoes"].items():
-        if t["id_talhao"] not in existentes:
-            novo_id = oracle_inserir_talhao(t["nome"], float(t["area_ha"]))
-            if novo_id == -1:
-                print(f"Falha ao inserir talhão {tid} no Oracle.")
-    # Insere operações
+
+    # 1) Sincroniza TALHÕES preservando o id_talhao da memória
+    print("\nSincronizando talhões...")
+    existentes_oracle = {t['id_talhao'] for t in oracle_listar_talhoes()}
+    novos_talhoes = [t for t in db_mem['talhoes'].values() if t['id_talhao'] not in existentes_oracle]
+
+    if novos_talhoes:
+        with oracle_conn() as con, con.cursor() as cur:
+            for t in novos_talhoes:
+                try:
+                    # inserção com id_talhao explícito para manter alinhado com a memória
+                    cur.execute(
+                        "INSERT INTO talhoes (id_talhao, nome, area_ha) VALUES (:1, :2, :3)",
+                        [t['id_talhao'], t['nome'], t['area_ha']]
+                    )
+                    print(f"✅ Talhão '{t['nome']}' (ID {t['id_talhao']}) inserido no Oracle.")
+                except Exception as e:
+                    print(f"❌ Falha ao inserir talhão '{t['nome']}' (ID {t['id_talhao']}): {e}")
+            con.commit()
+        # Atualiza o conjunto de existentes para a etapa das operações
+        existentes_oracle |= {t['id_talhao'] for t in novos_talhoes}
+    else:
+        print("Nenhum novo talhão para sincronizar.")
+
+    # 2) Sincroniza OPERAÇÕES agora que os talhões existem
+    print("\nSincronizando operações...")
     ops_oracle = oracle_listar_operacoes()
-    chave_oracle = {(o["id_talhao"], o["data"], o["peso_t_colhido"], o["perda_percent"]) for o in ops_oracle}
+    chave_oracle = {(o["id_talhao"], o["data"], float(o["peso_t_colhido"]), float(o["perda_percent"])) for o in ops_oracle}
+
+    novas_operacoes = []
     for op in db_mem["operacoes"]:
-        chave = (op["id_talhao"], op["data"], float(op["peso_t_colhido"]), float(op["perda_percent"]))
-        if chave not in chave_oracle:
-            oracle_inserir_operacao(*chave)
-    print("Sincronização concluída.")
+        if op["id_talhao"] not in existentes_oracle:
+            print(f"⚠️ Operação {op['id_op']} ignorada. Talhão {op['id_talhao']} não existe no Oracle.")
+            continue
+        chave_memoria = (op["id_talhao"], op["data"], float(op["peso_t_colhido"]), float(op["perda_percent"]))
+        if chave_memoria not in chave_oracle:
+            novas_operacoes.append(op)
+
+    if novas_operacoes:
+        with oracle_conn() as con, con.cursor() as cur:
+            for op in novas_operacoes:
+                try:
+                    cur.execute(
+                        "INSERT INTO operacoes (id_talhao, data_op, peso_t_colhido, perda_percent) "
+                        "VALUES (:1, TO_DATE(:2,'YYYY-MM-DD'), :3, :4)",
+                        [op["id_talhao"], op["data"], op["peso_t_colhido"], op["perda_percent"]]
+                    )
+                    print(f"✅ Operação {op['id_op']} (talhão {op['id_talhao']}) inserida.")
+                except Exception as e:
+                    print(f"❌ Falha ao inserir operação {op['id_op']}: {e}")
+            con.commit()
+    else:
+        print("Nenhuma nova operação para sincronizar.")
+
+    print("\nSincronização concluída.")
 
 def main():
     # carrega dados de disco (se existirem)
