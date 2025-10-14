@@ -6,7 +6,7 @@ from getpass import getpass
 # CAP. 3 — SUBALGORITMOS
 # =========================
 
-def input_int(prompt: str, min_val: int = None, max_val: int = None) -> int:
+def input_int(prompt: str, min_val: int | None = None, max_val: int | None = None) -> int:
     while True:
         try:
             v = int(input(prompt).strip())
@@ -20,7 +20,7 @@ def input_int(prompt: str, min_val: int = None, max_val: int = None) -> int:
         except ValueError:
             print("Digite um número inteiro válido.")
 
-def input_float(prompt: str, min_val: float = None, max_val: float = None) -> float:
+def input_float(prompt: str, min_val: float | None = None, max_val: float | None = None) -> float:
     while True:
         try:
             v = float(input(prompt).replace(",", ".").strip())
