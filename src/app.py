@@ -487,7 +487,6 @@ def listar_operacoes():
     if not db_mem["operacoes"]:
         print("Nenhuma operação registrada.")
         return
-    limpar_console()
     ops = db_mem["operacoes"]
     talhao_map = db_mem.get("talhoes", {})
 
@@ -518,6 +517,7 @@ def listar_operacoes():
     header_fmt = f"{{:>{w_id}}} | {{:<{w_data}}} | {{:<{w_talhao}}} | {{:>{w_peso}}} | {{:>{w_perda}}} | {{:<{w_alerta}}}"
     row_fmt = f"{{:>{w_id}}} | {{:<{w_data}}} | {{:<{w_talhao}}} | {{:>{w_peso}.2f}} | {{:>{w_perda}.2f}} | {{:<{w_alerta}}}"
 
+    limpar_console()
     print(header_fmt.format("ID", "Data", "Talhão", "Peso(t)", "Perda(%)", "Alerta"))
     total_width = w_id + w_data + w_talhao + w_peso + w_perda + w_alerta + 3 * (6 - 1)
     print("-" * total_width)
