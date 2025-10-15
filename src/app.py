@@ -58,6 +58,16 @@ def input_nonempty(prompt: str) -> str:
         print("Campo obrigatório.")  # se vazio, avisa e repete
 
 
+def limpar_console():
+    """Limpa o console/terminal."""
+    # Windows
+    if os.name == "nt":
+        os.system("cls")
+    # Linux e macOS
+    else:
+        os.system("clear")
+
+
 # =========================
 # CAP. 4 — ESTRUTURAS
 # =========================
@@ -138,6 +148,7 @@ def exportar_relatorio_txt(db: Dict[str, Any], caminho: str = "relatorio.txt") -
                 f"- {op['data']} | Talhão {op['id_talhao']} ({db['talhoes'].get(str(op['id_talhao']),{}).get('nome','?')}) "
                 f"| Peso {op['peso_t_colhido']} t | Perda {op['perda_percent']}%\n"
             )
+    limpar_console()
     print(f"Relatório exportado em: {os.path.abspath(caminho)}")
 
 
@@ -357,6 +368,7 @@ def cadastrar_talhao():
         "nome": nome,
         "area_ha": area,
     }
+    limpar_console()
     print(f"Talhão {new_id} criado.")
 
 
@@ -366,6 +378,8 @@ def listar_talhoes():
     if not db_mem["talhoes"]:
         print("Nenhum talhão cadastrado.")
         return
+    limpar_console()
+    print("=== Talhões cadastrados ===")
     print("ID | Nome | Área (ha)")
     # itera sobre os talhões e mostra cada um
     for t in db_mem["talhoes"].values():
@@ -378,7 +392,7 @@ def registrar_operacao():
         print("Cadastre talhões antes.")
         return
     listar_talhoes()  # mostra os talhões para o usuário escolher
-    id_t = input_int("ID do talhão: ", min_val=1)  # qual talhão?
+    id_t = input_int("ID do talhão a ser colhido: ", min_val=1)  # qual talhão?
     if str(id_t) not in db_mem["talhoes"]:  # se o ID não existir, avisa e cancela
         print("Talhão inexistente.")
         return
@@ -397,6 +411,7 @@ def registrar_operacao():
     }
     # adiciona na lista de operações
     db_mem["operacoes"].append(op)
+    limpar_console()
     print(f"Operação registrada. Alerta de perda: {op['alerta_perda']}")
 
 
@@ -406,6 +421,7 @@ def listar_operacoes():
     if not db_mem["operacoes"]:
         print("Nenhuma operação registrada.")
         return
+    limpar_console()
     print("ID | Data | Talhão | Peso(t) | Perda(%) | Alerta")
     # itera sobre as operações e mostra cada uma
     for op in db_mem["operacoes"]:
@@ -556,6 +572,7 @@ def main():
             exportar_relatorio_txt(db_mem)
         elif opcao == "6":
             salvar_json(CAMINHO_JSON, db_mem)
+            limpar_console()
             print(f"Salvo em {CAMINHO_JSON}.")
         elif opcao == "7":
             db = carregar_json(CAMINHO_JSON)  # carrega o JSON do arquivo na variável
@@ -563,8 +580,10 @@ def main():
             if isinstance(db, dict) and "talhoes" in db and "operacoes" in db:
                 # insere os dados carregados do arquivo JSON no dicionário em memória
                 db_mem.update(db)
+                limpar_console()
                 print("JSON carregado na memória.")
             else:
+                limpar_console()
                 print("JSON inválido.")
         elif opcao == "8":
             print("\n=== Sincronizar MEM -> Oracle ===")
@@ -572,9 +591,11 @@ def main():
                 # sobe os dados do dicionário em memória para o banco Oracle
                 sincronizar_mem_para_oracle()
         elif opcao == "0":
+            limpar_console()
             print("Até mais!")
             break
         else:
+            limpar_console()
             print("Opção inválida.")
 
 
