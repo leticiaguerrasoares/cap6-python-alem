@@ -121,10 +121,33 @@ Se a conexão for bem-sucedida, retorna True. Se houver qualquer erro, exibe uma
 Verifica se as variáveis de ambiente necessárias para a conexão com o Oracle (ORA_USER, ORA_PASS, ORA_DSN) estão definidas e não estão vazias. Retorna True se todas estiverem definidas, caso contrário, retorna False.
 ##### oracle_conn()
 Tenta estabelecer uma conexão com o banco de dados Oracle usando as credenciais fornecidas nas variáveis de ambiente (ORA_USER, ORA_PASS, ORA_DSN) e retorna o objeto de conexão.
-##### pedir_credenciais_oracle() -> None
+##### pedir_credenciais_oracle() -> bool
 Solicita ao usuário que insira as credenciais de acesso ao Oracle (usuário, senha e DSN) e define essas credenciais como variáveis de ambiente (ORA_USER, ORA_PASS, ORA_DSN).<br>
 Tenta estabelecer uma conexão com o Oracle chamando oracle_conn() e tentando executar uma consulta de teste.<br>
 Se bem sucedido, exibe uma mensagem de sucesso e retorna True. Se houver qualquer erro, exibe uma mensagem de erro, limpa as variáveis de ambiente e retorna False.
+##### sincronizar_mem_para_oracle()
+Verifica se as credenciais do Oracle foran declaradas como variáveis de ambiente, se não, exibe alerta e pede as credenciais chamando pedir_credenciais_oracle().<br>
+Se as credenciais estiverem corretas, chama oracle_criar_tabelas() para criar as tabelas necessárias no Oracle.<br>
+Em seguida, obtém todos os talhões que estão no banco de dados da Oracle chamando oracle_listar_talhoes() e armazena os IDs em um conjunto para evitar duplicatas.<br>
+Depois, identifica os talhões que estão no banco de dados em memória (db_mem) mas não estão no Oracle, e os insere em uma lista.<br>
+Se houver talhões para inserir, abre conexão com o Oracle, cria um cursor itera sobre os talhões a serem inseridos, executando uma instrução INSERT para cada um e exibindo na tela.<br>
+Após inserir todos os talhões, confirma as alterações com commit().<br>
+Atualiza o conjunto de IDs de talhões no Oracle e repete o processo para as operações, identificando as que estão no banco de dados em memória (db_mem) mas não estão no Oracle, chamando oracle_listar_operacoes(), inserindo-as em um conjunto.<br>
+Cria uma lista de operações a serem inseridas iterando sobre as operações no banco de dados em memória (db_mem) e verificando se o ID da operação não está no conjunto de IDs de operações no Oracle. Se não estiver, adiciona a operação à lista de operações a serem inseridas.<br>
+Se houver operações para inserir, abre conexão com o Oracle, cria um cursor e itera sobre as operações a serem inseridas, executando uma instrução INSERT para cada uma e exibindo na tela.<br>
+Após inserir todas as operações, confirma as alterações com commit() e informa sucesso.<br>
+##### oracle_criar_tabelas()
+Abre conexão com o Oracle, cria um cursor e executa instruções SQL para criar as tabelas "talhoes" e "operacoes" se elas não existirem.<br>
+As instruções SQL estão pré-definidas como strings chamadas DDL_TALHOES e DDL_OPERACOES.<br>
+Informa sucesso ou falha na criação das tabelas.
+##### oracle_listar_talhoes() -> List[Dict[str, Any]]
+Abre conexão com o Oracle, cria um cursor e executa uma consulta SQL para selecionar todos os talhões da tabela "talhoes".<br>
+Obtém os resultados da consulta e os retorna em uma lista de dicionários, onde cada dicionário representa um talhão.<br>
+Em caso de erro, exibe uma mensagem de erro e retorna uma lista vazia.
+##### oracle_listar_operacoes() -> List[Dict[str, Any]]
+Abre conexão com o Oracle, cria um cursor e executa uma consulta SQL para selecionar todas as operações da tabela "operacoes".<br>
+Obtém os resultados da consulta e os retorna em uma lista de dicionários, onde cada dicionário representa uma operação.<br>
+Em caso de erro, exibe uma mensagem de erro e retorna uma lista vazia.
 
 ## 📋 Licença
 
