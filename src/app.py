@@ -121,10 +121,9 @@ def carregar_json(caminho: str) -> Dict[str, Any]:
 
 
 def exportar_relatorio_txt(db: Dict[str, Any], caminho: str = "relatorio.txt") -> None:
-    """Produz um relatório em um arquivo .txt."""
-    total_ops = len(
-        db["operacoes"]
-    )  # total de operações é o tamanho da lista de operações
+    """Produz um relatório em um arquivo .txt com tabela alinhada."""
+    # total de operações é o tamanho da lista de operações
+    total_ops = len(db["operacoes"])  
     # cria uma lista com as perdas de cada operação, ou 0.0 se não houver operações
     perdas = [op["perda_percent"] for op in db["operacoes"]] or [0.0]
     media_perda = sum(perdas) / len(perdas)
@@ -135,19 +134,73 @@ def exportar_relatorio_txt(db: Dict[str, Any], caminho: str = "relatorio.txt") -
         if db["operacoes"]
         else 0.0
     )
+
+    # Prepara dados para tabela alinhada (se houver operações)
+    talhao_map = db.get("talhoes", {})
+    # cria uma lista onde será armazenada cada linha da tabela
+    linhas = []
+    for op in db["operacoes"]:
+        # Obtém o nome do talhão a partir do id_talhao, ou "?" se não encontrar
+        nome_t = talhao_map.get(str(op.get("id_talhao")), {}).get("nome", "?")
+        # preenche a lista com dicionários representando cada linha
+        linhas.append(
+            {
+                "data": str(op.get("data", "")),
+                "id_talhao": str(op.get("id_talhao")),
+                "nome": nome_t,
+                "peso": float(op.get("peso_t_colhido", 0.0)),
+                "perda": float(op.get("perda_percent", 0.0)),
+            }
+        )
+
     # escreve o relatório no arquivo
     with open(caminho, "w", encoding="utf-8") as f:
+        f.write("=" * 70 + "\n")
         f.write("RELATÓRIO DE COLHEITA DE CANA\n")
-        f.write(f"Data: {datetime.datetime.now()}\n\n")
+        f.write("=" * 70 + "\n")
+        f.write(
+            f"Data de geração: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
+        f.write("RESUMO GERAL\n")
+        f.write("-" * 70 + "\n")
         f.write(f"Total de operações: {total_ops}\n")
         f.write(f"Peso total colhido (t): {total_peso:.2f}\n")
         f.write(f"Média de perda estimada (%): {media_perda:.2f}\n\n")
-        f.write("Operações:\n")
-        for op in db["operacoes"]:
-            f.write(
-                f"- {op['data']} | Talhão {op['id_talhao']} ({db['talhoes'].get(str(op['id_talhao']),{}).get('nome','?')}) "
-                f"| Peso {op['peso_t_colhido']} t | Perda {op['perda_percent']}%\n"
+
+        if linhas:
+            # Calcula larguras das colunas aqui, quando já sabemos que a lista de linhas
+            # não está vazia
+            w_data = max(len("Data"), max(len(l["data"]) for l in linhas))
+            w_id = max(len("ID"), max(len(l["id_talhao"]) for l in linhas))
+            w_nome = max(len("Talhão"), max(len(l["nome"]) for l in linhas))
+            w_peso = max(len("Peso(t)"), max(len(f"{l['peso']:.2f}") for l in linhas))
+            w_perda = max(
+                len("Perda(%)"), max(len(f"{l['perda']:.2f}") for l in linhas)
             )
+
+            f.write("OPERAÇÕES DE COLHEITA\n")
+            f.write("-" * 70 + "\n")
+
+            # Cabeçalho da tabela
+            header = f"{{:<{w_data}}} | {{:>{w_id}}} | {{:<{w_nome}}} | {{:>{w_peso}}} | {{:>{w_perda}}}"
+            f.write(header.format("Data", "ID", "Talhão", "Peso(t)", "Perda(%)") + "\n")
+            total_width = w_data + w_id + w_nome + w_peso + w_perda + 12
+            f.write("-" * total_width + "\n")
+
+            # Linhas de dados
+            row_fmt = f"{{:<{w_data}}} | {{:>{w_id}}} | {{:<{w_nome}}} | {{:>{w_peso}.2f}} | {{:>{w_perda}.2f}}"
+            for l in linhas:
+                f.write(
+                    row_fmt.format(
+                        l["data"], l["id_talhao"], l["nome"], l["peso"], l["perda"]
+                    )
+                    + "\n"
+                )
+        else:
+            f.write("Nenhuma operação registrada.\n")
+
+        f.write("\n" + "=" * 70 + "\n")
+
     limpar_console()
     print(f"Relatório exportado em: {os.path.abspath(caminho)}")
 
@@ -374,16 +427,29 @@ def cadastrar_talhao():
 
 def listar_talhoes():
     """Mostra os talhões cadastrados na memória."""
-    # se o dicionário de talhões estiver vazio, avisa e cancela
-    if not db_mem["talhoes"]:
+    talhoes = db_mem["talhoes"]
+    if not talhoes:
         print("Nenhum talhão cadastrado.")
         return
+
+    # Calcula larguras das colunas
+    valores = list(talhoes.values())
+    largura_id = max(len("ID"), max(len(str(t["id_talhao"])) for t in valores))
+    largura_nome = max(len("Nome"), max(len(str(t["nome"])) for t in valores))
+    largura_area = max(
+        len("Área (ha)"), max(len(f"{float(t['area_ha']):.2f}") for t in valores)
+    )
+
+    # Monta modelo de linhas (ID à direita, Nome à esquerda, Área à direita)
+    header_fmt = f"{{:>{largura_id}}} | {{:<{largura_nome}}} | {{:>{largura_area}}}"
+    row_fmt = f"{{:>{largura_id}}} | {{:<{largura_nome}}} | {{:>{largura_area}.2f}}"
+
     limpar_console()
-    print("=== Talhões cadastrados ===")
-    print("ID | Nome | Área (ha)")
-    # itera sobre os talhões e mostra cada um
-    for t in db_mem["talhoes"].values():
-        print(f"{t['id_talhao']:>2} | {t['nome']} | {t['area_ha']}")
+    print(header_fmt.format("ID", "Nome", "Área (ha)"))  # cabeçalho
+    print("-" * (largura_id + largura_nome + largura_area + 6))  # linha separadora
+    # itera sobre os talhões e mostra cada um seguindo o modelo
+    for t in valores:
+        print(row_fmt.format(t["id_talhao"], t["nome"], t["area_ha"]))
 
 
 def registrar_operacao():
@@ -422,13 +488,44 @@ def listar_operacoes():
         print("Nenhuma operação registrada.")
         return
     limpar_console()
-    print("ID | Data | Talhão | Peso(t) | Perda(%) | Alerta")
-    # itera sobre as operações e mostra cada uma
-    for op in db_mem["operacoes"]:
-        talhao = db_mem["talhoes"].get(str(op["id_talhao"]), {})
+    ops = db_mem["operacoes"]
+    talhao_map = db_mem.get("talhoes", {})
+
+    # Prepara valores calculados para cada coluna
+    linhas = []
+    for op in ops:
+        nome_t = talhao_map.get(str(op.get("id_talhao")), {}).get("nome", "?")
+        talhao_txt = f"{op.get('id_talhao')} ({nome_t})"
+        linhas.append(
+            {
+                "id": str(op.get("id_op")),
+                "data": str(op.get("data", "")),
+                "talhao": talhao_txt,
+                "peso": float(op.get("peso_t_colhido", 0.0)),
+                "perda": float(op.get("perda_percent", 0.0)),
+                "alerta": str(op.get("alerta_perda", "")),
+            }
+        )
+
+    # Larguras dinâmicas
+    w_id = max(len("ID"), max(len(l["id"]) for l in linhas))
+    w_data = max(len("Data"), max(len(l["data"]) for l in linhas))
+    w_talhao = max(len("Talhão"), max(len(l["talhao"]) for l in linhas))
+    w_peso = max(len("Peso(t)"), max(len(f"{l['peso']:.2f}") for l in linhas))
+    w_perda = max(len("Perda(%)"), max(len(f"{l['perda']:.2f}") for l in linhas))
+    w_alerta = max(len("Alerta"), max(len(l["alerta"]) for l in linhas))
+
+    header_fmt = f"{{:>{w_id}}} | {{:<{w_data}}} | {{:<{w_talhao}}} | {{:>{w_peso}}} | {{:>{w_perda}}} | {{:<{w_alerta}}}"
+    row_fmt = f"{{:>{w_id}}} | {{:<{w_data}}} | {{:<{w_talhao}}} | {{:>{w_peso}.2f}} | {{:>{w_perda}.2f}} | {{:<{w_alerta}}}"
+
+    print(header_fmt.format("ID", "Data", "Talhão", "Peso(t)", "Perda(%)", "Alerta"))
+    total_width = w_id + w_data + w_talhao + w_peso + w_perda + w_alerta + 3 * (6 - 1)
+    print("-" * total_width)
+    for l in linhas:
         print(
-            f"{op['id_op']:>2} | {op['data']} | {op['id_talhao']}({talhao.get('nome','?')}) | "
-            f"{op['peso_t_colhido']:.2f} | {op['perda_percent']:.2f} | {op['alerta_perda']}"
+            row_fmt.format(
+                l["id"], l["data"], l["talhao"], l["peso"], l["perda"], l["alerta"]
+            )
         )
 
 
