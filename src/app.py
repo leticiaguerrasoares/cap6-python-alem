@@ -1,11 +1,13 @@
 import json, os, datetime
 from typing import Dict, Any, List
 from getpass import getpass
+import oracledb
 
 # =========================
 # CAP. 3 — SUBALGORITMOS
 # =========================
 # O código inteiro é estruturado em subalgoritmos.
+
 
 def input_int(
     prompt: str, min_val: int | None = None, max_val: int | None = None
@@ -62,12 +64,30 @@ def input_nonempty(prompt: str) -> str:
 # Declara a estrutura de dados central do projeto, que é um dicionário de talhões e
 # colheitas, que armazenará os dados durante a execução do programa e servirá como
 # base para criar/carregar arquivo JSON e interagir com banco de dados da Oracle.
-db_mem = {"talhoes": {}, "operacoes": []}  # id_talhao -> dict  # lista de dicts
+# "talhoes" é um dicionário de dicionários e "operacoes" é uma lista de dicionários.
+# cada talhão e operação é um dicionário.
+# Exemplo:
+# {
+#   "talhoes": {
+#     "1": {"nome": "Talhão 1", "area_ha": 10.0},
+#     "2": {"nome": "Talhão 2", "area_ha": 15.0}
+#   },
+#   "operacoes": [
+#     {"id_talhao": 1, "data": "2023-01-01", "peso_t_colhido": 5.0, "perda_percent": 10.0},
+#     {"id_talhao": 2, "data": "2023-01-02", "peso_t_colhido": 7.0, "perda_percent": 5.0}
+#   ]
+# }
+db_mem = {"talhoes": {}, "operacoes": []}
 
 
 def gerar_id_talhao(db: Dict[str, Any]) -> int:
-    # IDs inteiros incrementais
-    return (max(map(int, db["talhoes"].keys())) + 1) if db["talhoes"] else 1
+    """Gera um novo ID para talhão, baseado nos existentes na memória."""
+    if db["talhoes"]:  # se houver pelo menos um talhão
+        # converte os IDs (chaves do dicionário) para inteiros e retorna um iterador
+        iteravel_ids = map(int, db["talhoes"].keys())
+        return max(iteravel_ids) + 1  # retorna o maior valor do iterador + 1
+    else:
+        return 1  # se não houver talhão, começa do 1
 
 
 # =========================
@@ -77,11 +97,13 @@ CAMINHO_JSON = "dados.json"
 
 
 def salvar_json(caminho: str, dados: Dict[str, Any]) -> None:
+    """Salva os dados em um arquivo JSON formatado."""
     with open(caminho, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=2)
 
 
 def carregar_json(caminho: str) -> Dict[str, Any]:
+    """Carrega os dados de um arquivo JSON, se existir. Se não, retorna estrutura vazia."""
     if not os.path.exists(caminho):
         return {"talhoes": {}, "operacoes": []}
     with open(caminho, "r", encoding="utf-8") as f:
@@ -89,13 +111,21 @@ def carregar_json(caminho: str) -> Dict[str, Any]:
 
 
 def exportar_relatorio_txt(db: Dict[str, Any], caminho: str = "relatorio.txt") -> None:
-    # estatísticas simples (Cap. 7 )
-    total_ops = len(db["operacoes"])
+    """Produz um relatório em um arquivo .txt."""
+    total_ops = len(
+        db["operacoes"]
+    )  # total de operações é o tamanho da lista de operações
+    # cria uma lista com as perdas de cada operação, ou 0.0 se não houver operações
     perdas = [op["perda_percent"] for op in db["operacoes"]] or [0.0]
     media_perda = sum(perdas) / len(perdas)
     total_peso = (
-        sum(op["peso_t_colhido"] for op in db["operacoes"]) if db["operacoes"] else 0.0
+        # se db["operacoes"] não estiver vazia, cria uma sequencia com os pesos colhidos
+        # em cada operação e soma, senão retorna 0.0
+        sum(op["peso_t_colhido"] for op in db["operacoes"])
+        if db["operacoes"]
+        else 0.0
     )
+    # escreve o relatório no arquivo
     with open(caminho, "w", encoding="utf-8") as f:
         f.write("RELATÓRIO DE COLHEITA DE CANA\n")
         f.write(f"Data: {datetime.datetime.now()}\n\n")
@@ -117,12 +147,16 @@ def exportar_relatorio_txt(db: Dict[str, Any], caminho: str = "relatorio.txt") -
 
 
 def oracle_enabled() -> bool:
+    """
+    Verifica se as variáveis de ambiente necessárias para conexão com a Oracle estão definidas.
+    """
+    # checa se ORA_DSN, ORA_USER e ORA_PASS estão definidas em os.environ
+    # retorna True se todas existirem, senão False
     return all(k in os.environ for k in ["ORA_DSN", "ORA_USER", "ORA_PASS"])
 
 
 def oracle_conn():
-    import oracledb
-
+    """Cria e retorna uma conexão com o banco Oracle usando variáveis de ambiente."""
     return oracledb.connect(
         user=os.environ["ORA_USER"],
         password=os.environ["ORA_PASS"],
@@ -150,23 +184,27 @@ CREATE TABLE operacoes (
 
 
 def oracle_criar_tabelas():
+    """Cria as tabelas talhoes e operacoes, se não existirem."""
     try:
+        # abre conexão e cria um cursor usando gerenciador de contexto
         with oracle_conn() as con, con.cursor() as cur:
             for ddl in (DDL_TALHOES, DDL_OPERACOES):
                 try:
-                    cur.execute(ddl)
+                    cur.execute(ddl)  # executa cada DDL
+                    con.commit()  # confirma a transação
+                # se falhar, informa o erro, mas ignora erro de tabela já existente
                 except Exception as e:
                     if "ORA-00955" not in str(e):
-                        raise
+                        print(f"[Oracle] Erro criando tabela: {e}")
         print("Tabelas conferidas/criadas.")
+    # se a conexão falhar, mostra o erro
     except Exception as e:
         print(f"[Oracle] Erro criando tabelas: {e}")
 
 
 def oracle_inserir_talhao(nome: str, area_ha: float) -> int:
+    """Insere um talhão e retorna o ID gerado, ou -1 se falhar."""
     try:
-        import oracledb
-
         with oracle_conn() as con, con.cursor() as cur:
             out_id = cur.var(oracledb.NUMBER)  # variável de saída
             cur.execute(
@@ -182,14 +220,20 @@ def oracle_inserir_talhao(nome: str, area_ha: float) -> int:
 
 
 def oracle_listar_talhoes() -> List[Dict[str, Any]]:
+    """Retorna uma lista de talhões do banco Oracle."""
     try:
-        with oracle_conn() as con, con.cursor() as cur:
+        with oracle_conn() as con, con.cursor() as cur:  # abre conexão e cria cursor
+            # executa a comando SQL
             cur.execute(
                 "SELECT id_talhao, nome, area_ha FROM talhoes ORDER BY id_talhao"
             )
+            # produz uma lista de dicionários iterando sobre as linhas retornadas pelo
+            # cursor
             return [
-                {"id_talhao": r[0], "nome": r[1], "area_ha": float(r[2])} for r in cur
+                {"id_talhao": row[0], "nome": row[1], "area_ha": float(row[2])}
+                for row in cur
             ]
+    # se a conexão ou consulta falhar, mostra o erro e retorna lista vazia
     except Exception as e:
         print(f"[Oracle] Erro listando talhões: {e}")
         return []
@@ -211,44 +255,30 @@ def oracle_inserir_operacao(
 
 
 def oracle_listar_operacoes() -> List[Dict[str, Any]]:
+    """Retorna uma lista de operações de colheita do banco Oracle."""
     try:
-        with oracle_conn() as con, con.cursor() as cur:
+        with oracle_conn() as con, con.cursor() as cur:  # abre conexão e cria cursor
+            # executa a comando SQL
             cur.execute(
                 "SELECT id_op, id_talhao, TO_CHAR(data_op,'YYYY-MM-DD'), peso_t_colhido, perda_percent "
                 "FROM operacoes ORDER BY id_op"
             )
+            # produz uma lista de dicionários iterando sobre as linhas retornadas pelo
+            # cursor
             return [
                 {
-                    "id_op": r[0],
-                    "id_talhao": r[1],
-                    "data": r[2],
-                    "peso_t_colhido": float(r[3]),
-                    "perda_percent": float(r[4]),
+                    "id_op": row[0],
+                    "id_talhao": row[1],
+                    "data": row[2],
+                    "peso_t_colhido": float(row[3]),
+                    "perda_percent": float(row[4]),
                 }
-                for r in cur
+                for row in cur
             ]
+    # se a conexão ou consulta falhar, mostra o erro e retorna lista vazia
     except Exception as e:
         print(f"[Oracle] Erro listando operações: {e}")
         return []
-
-
-# ================
-# LÓGICA (Cap. 2)
-# ================
-
-
-def perda_alerta(perda_percent: float) -> str:
-    # Heurística simples: alerta por faixas
-    if perda_percent >= 15:
-        return "ALTA (investigar regulagem da colhedora, velocidade de avanço, altura de corte)"
-    if perda_percent >= 8:
-        return "MÉDIA (rever umidade e terreno, checar facas)"
-    return "BAIXA (dentro do esperado)"
-
-
-# =========================
-# ORACLE: LOGIN INTERATIVO
-# =========================
 
 
 def pedir_credenciais_oracle() -> bool:
@@ -305,12 +335,27 @@ def oracle_config_ok() -> bool:
         return pedir_credenciais_oracle()
 
 
+# ================
+# LÓGICA (Cap. 2)
+# ================
+
+
+def perda_alerta(perda_percent: float) -> str:
+    # Heurística simples: alerta por faixas
+    if perda_percent >= 15:
+        return "ALTA (investigar regulagem da colhedora, velocidade de avanço, altura de corte)"
+    if perda_percent >= 8:
+        return "MÉDIA (rever umidade e terreno, checar facas)"
+    return "BAIXA (dentro do esperado)"
+
+
 # =========================
 # MENU/CRUD em memória
 # =========================
 
 
 def menu():
+    """Mostra as opções do sistema."""
     print("\n=== GESTÃO DE COLHEITA DE CANA ===")
     print("1) Cadastrar talhão")
     print("2) Listar talhões")
@@ -325,8 +370,11 @@ def menu():
 
 
 def cadastrar_talhao():
+    """Adiciona um talhão na memória."""
+    # inputs com validação
     nome = input_nonempty("Nome do talhão: ")
     area = input_float("Área (ha): ", min_val=0.1)
+    # gera novo ID e adiciona novo talhão no dicionário de talhões
     new_id = gerar_id_talhao(db_mem)
     db_mem["talhoes"][str(new_id)] = {
         "id_talhao": new_id,
@@ -337,26 +385,33 @@ def cadastrar_talhao():
 
 
 def listar_talhoes():
-    if not db_mem["talhoes"]:
+    """Mostra os talhões cadastrados na memória."""
+    if not db_mem[
+        "talhoes"
+    ]:  # se o dicionário de talhões estiver vazio, avisa e cancela
         print("Nenhum talhão cadastrado.")
         return
     print("ID | Nome | Área (ha)")
+    # itera sobre os talhões e mostra cada um
     for tid, t in db_mem["talhoes"].items():
         print(f"{t['id_talhao']:>2} | {t['nome']} | {t['area_ha']}")
 
 
 def registrar_operacao():
-    if not db_mem["talhoes"]:
+    """Adiciona uma operação de colheita na memória."""
+    if not db_mem["talhoes"]:  # se não houver talhões, avisa e cancela
         print("Cadastre talhões antes.")
         return
-    listar_talhoes()
-    id_t = input_int("ID do talhão: ", min_val=1)
-    if str(id_t) not in db_mem["talhoes"]:
+    listar_talhoes()  # mostra os talhões para o usuário escolher
+    id_t = input_int("ID do talhão: ", min_val=1)  # qual talhão?
+    if str(id_t) not in db_mem["talhoes"]:  # se o ID não existir, avisa e cancela
         print("Talhão inexistente.")
         return
+    # inputs com validação
     data_str = input_nonempty("Data (YYYY-MM-DD): ")
     peso = input_float("Peso colhido (t): ", min_val=0.0)
     perda = input_float("Perda estimada (%): ", min_val=0.0, max_val=100.0)
+    # cria o dicionário da operação de colheita
     op = {
         "id_op": len(db_mem["operacoes"]) + 1,
         "id_talhao": id_t,
@@ -365,42 +420,56 @@ def registrar_operacao():
         "perda_percent": perda,
         "alerta_perda": perda_alerta(perda),
     }
+    # adiciona na lista de operações
     db_mem["operacoes"].append(op)
     print(f"Operação registrada. Alerta de perda: {op['alerta_perda']}")
 
 
 def listar_operacoes():
+    """Mostra as operações de colheita registradas na memória."""
+    # se a lista de operações estiver vazia, avisa e cancela
     if not db_mem["operacoes"]:
         print("Nenhuma operação registrada.")
         return
     print("ID | Data | Talhão | Peso(t) | Perda(%) | Alerta")
+    # itera sobre as operações e mostra cada uma
     for op in db_mem["operacoes"]:
-        t = db_mem["talhoes"].get(str(op["id_talhao"]), {})
+        talhao = db_mem["talhoes"].get(str(op["id_talhao"]), {})
         print(
-            f"{op['id_op']:>2} | {op['data']} | {op['id_talhao']}({t.get('nome','?')}) | "
+            f"{op['id_op']:>2} | {op['data']} | {op['id_talhao']}({talhao.get('nome','?')}) | "
             f"{op['peso_t_colhido']:.2f} | {op['perda_percent']:.2f} | {op['alerta_perda']}"
         )
 
 
 def sincronizar_mem_para_oracle():
+    """
+    Sincroniza os dados da memória para o banco Oracle.
+    """
+    # se as credenciais não foram declaradas como variáveis de ambiente, avisa e pede
     if not oracle_enabled():
         print("Defina ORA_DSN / ORA_USER / ORA_PASS nas variáveis de ambiente.")
+        pedir_credenciais_oracle()
         return
 
+    # se as credenciais estão registradas, cria as tabelas
     oracle_criar_tabelas()
 
     # 1) Sincroniza TALHÕES preservando o id_talhao da memória
     print("\nSincronizando talhões...")
+    # cria um conjunto com os IDs dos talhões já existentes no Oracle
     existentes_oracle = {t["id_talhao"] for t in oracle_listar_talhoes()}
+    # cria uma lista com os talhões que estão na memória, mas não no Oracle, iteraando
+    # sobre os talhões na memória e filtrando pelos que não estão no conjunto acima
     novos_talhoes = [
         t for t in db_mem["talhoes"].values() if t["id_talhao"] not in existentes_oracle
     ]
-
+    # se a lista acima não estiver vazia
     if novos_talhoes:
-        with oracle_conn() as con, con.cursor() as cur:
+        with oracle_conn() as con, con.cursor() as cur:  # abre conexão e cria cursor
+            # itera sobre os talhões novos
             for t in novos_talhoes:
                 try:
-                    # inserção com id_talhao explícito para manter alinhado com a memória
+                    # insere os novos talhões com comando SQL
                     cur.execute(
                         "INSERT INTO talhoes (id_talhao, nome, area_ha) VALUES (:1, :2, :3)",
                         [t["id_talhao"], t["nome"], t["area_ha"]],
@@ -408,49 +477,63 @@ def sincronizar_mem_para_oracle():
                     print(
                         f"✅ Talhão '{t['nome']}' (ID {t['id_talhao']}) inserido no Oracle."
                     )
+                # se a inserção falhar, mostra o erro
                 except Exception as e:
                     print(
                         f"❌ Falha ao inserir talhão '{t['nome']}' (ID {t['id_talhao']}): {e}"
                     )
+            # confirma a transação
             con.commit()
         # Atualiza o conjunto de existentes para a etapa das operações
         existentes_oracle |= {t["id_talhao"] for t in novos_talhoes}
-    else:
+    else:  # se não houver talhões novos, avisa
         print("Nenhum novo talhão para sincronizar.")
 
-    # 2) Sincroniza OPERAÇÕES agora que os talhões existem
     print("\nSincronizando operações...")
+    # cria uma lista com as operações já existentes no banco Oracle
     ops_oracle = oracle_listar_operacoes()
-    chave_oracle = {
+    # itera sobre as operações da lista acima criada e cria um conjunto de tuplas
+    # (id_talhao, data, peso_t_colhido, perda_percent)
+    # cada tupla representa uma operação de colheita única
+    conjunto_op_oracle = {
         (
-            o["id_talhao"],
-            o["data"],
-            float(o["peso_t_colhido"]),
-            float(o["perda_percent"]),
-        )
-        for o in ops_oracle
-    }
-
-    novas_operacoes = []
-    for op in db_mem["operacoes"]:
-        if op["id_talhao"] not in existentes_oracle:
-            print(
-                f"⚠️ Operação {op['id_op']} ignorada. Talhão {op['id_talhao']} não existe no Oracle."
-            )
-            continue
-        chave_memoria = (
             op["id_talhao"],
             op["data"],
             float(op["peso_t_colhido"]),
             float(op["perda_percent"]),
         )
-        if chave_memoria not in chave_oracle:
+        for op in ops_oracle
+    }
+
+    # cria uma lista com as operações que estão na memória, mas não no Oracle e cujo
+    # talhão existe no Oracle
+    novas_operacoes = []
+    for op in db_mem["operacoes"]:  # itera sobre as operações de colheita na memória
+        # se o talhão da colheita não existir no Oracle, avisa e ignora
+        if op["id_talhao"] not in existentes_oracle:
+            print(
+                f"⚠️ Operação {op['id_op']} ignorada. Talhão {op['id_talhao']} não existe no Oracle."
+            )
+            continue
+        # cria uma tupla que representa uma operação de colheita
+        op_na_memoria = (
+            op["id_talhao"],
+            op["data"],
+            float(op["peso_t_colhido"]),
+            float(op["perda_percent"]),
+        )
+        # se a tupla acima não existir no conjunto de operações do Oracle, adiciona na
+        # lista de novas operações
+        if op_na_memoria not in conjunto_op_oracle:
             novas_operacoes.append(op)
 
+    # se houver novas operações
     if novas_operacoes:
-        with oracle_conn() as con, con.cursor() as cur:
+        with oracle_conn() as con, con.cursor() as cur:  # abre conexão e cria cursor
+            # itera sobre as novas operações
             for op in novas_operacoes:
                 try:
+                    # insere a operação com comando SQL
                     cur.execute(
                         "INSERT INTO operacoes (id_talhao, data_op, peso_t_colhido, perda_percent) "
                         "VALUES (:1, TO_DATE(:2,'YYYY-MM-DD'), :3, :4)",
@@ -464,8 +547,10 @@ def sincronizar_mem_para_oracle():
                     print(
                         f"✅ Operação {op['id_op']} (talhão {op['id_talhao']}) inserida."
                     )
+                # se a inserção falhar, mostra o erro
                 except Exception as e:
                     print(f"❌ Falha ao inserir operação {op['id_op']}: {e}")
+            # confirma a transação
             con.commit()
     else:
         print("Nenhuma nova operação para sincronizar.")
